@@ -2,17 +2,19 @@ name: Full CI/CD Pipeline
 
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    branches: [ "main" ]  # Trigger on push to main
+  workflow_dispatch:  # Allow manual triggers
 
 env:
+  # Define a variable for the image name to avoid repetition
   IMAGE_NAME: ghcr.io/${{ github.repository }}
 
 jobs:
+  # JOB 1: Build the Docker image and push it to a registry
   build:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
-    permissions:
+    permissions: # Grant special permissions to the GITHUB_TOKEN for this job
       contents: read
       packages: write
     outputs:
@@ -41,12 +43,14 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Pass the commit SHA as a build argument to the Dockerfile
           build-args: |
             APP_VERSION=${{ github.sha }}
-
+ 
+  # JOB 2: Deploy the image to our server
   deploy:
     name: Deploy to EC2
-    needs: build
+    needs: build # This is critical: The 'deploy' job will ONLY run if 'build' succeeds.
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to EC2 instance via SSH
@@ -57,14 +61,21 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script: |
+            # Login to GHCR on the EC2 instance
             echo ${{ secrets.GITHUB_TOKEN }} | sudo docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
 
-            # Pull using tag passed from build job
+            # Best practice: Pull the image using the unique commit SHA tag
+            # This ensures we deploy the exact image we just built, not a generic 'latest' tag
+            
+
             sudo docker pull ${{ needs.build.outputs.image_tag }}
 
+            # Stop and remove the old container to avoid port conflicts
             sudo docker stop my-app-container || true
             sudo docker rm my-app-container || true
-
+           
+            # Run a new container from the new image
             sudo docker run -d --name my-app-container --restart always -p 3000:3000 ${{ needs.build.outputs.image_tag }}
-
+           
+            # Clean up old, unused Docker images to save disk space
             sudo docker image prune -f
