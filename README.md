@@ -25,3 +25,7 @@ Installed Docker on the EC2 instance
 ![alt text](image-7.png)
 
 ![alt text](image-1.png)
+
+
+### Cleanup: Terminated EC2 instance
+![alt text](image-8.png)
