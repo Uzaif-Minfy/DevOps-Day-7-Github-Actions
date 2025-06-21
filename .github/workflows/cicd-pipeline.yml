@@ -1,21 +1,18 @@
-# .github/workflows/cicd-pipeline.yml
 name: Full CI/CD Pipeline
 
 on:
   push:
     branches: [ "main" ] # Trigger on push to main
-  workflow_dispatch: # Allow manual triggers
+  workflow_dispatch: # Allow manual trigger
 
 env:
-  # Define a variable for the image name to avoid repetition
   IMAGE_NAME: ghcr.io/${{ github.repository }}
 
 jobs:
-  # JOB 1: Build the Docker image and push it to a registry
   build:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
-    permissions: # Grant special permissions to the GITHUB_TOKEN for this job
+    permissions:
       contents: read
       packages: write
     steps:
@@ -42,14 +39,12 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Pass the commit SHA as a build argument to the Dockerfile
           build-args: |
             APP_VERSION=${{ github.sha }}
 
-  # JOB 2: Deploy the image to our server
   deploy:
     name: Deploy to EC2
-    needs: build # This is critical: The 'deploy' job will ONLY run if 'build' succeeds.
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to EC2 instance via SSH
@@ -60,19 +55,17 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script: |
-            # Login to GHCR on the EC2 instance
             echo ${{ secrets.GITHUB_TOKEN }} | sudo docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
 
-            # Best practice: Pull the image using the unique commit SHA tag
-            # This ensures we deploy the exact image we just built, not a generic 'latest' tag
-            sudo docker pull ${{ env.IMAGE_NAME }}@${{ steps.meta.outputs.digest }}
+            # Pull using the tagged image
+            sudo docker pull ${{ steps.meta.outputs.tags }}
 
-            # Stop and remove the old container to avoid port conflicts
+            # Stop and remove any old container
             sudo docker stop my-app-container || true
             sudo docker rm my-app-container || true
 
-            # Run a new container from the new image
-            sudo docker run -d --name my-app-container --restart always -p 3000:3000 ${{ env.IMAGE_NAME }}@${{ steps.meta.outputs.digest }}
+            # Run the container using the new image
+            sudo docker run -d --name my-app-container --restart always -p 3000:3000 ${{ steps.meta.outputs.tags }}
 
-            # Clean up old, unused Docker images to save disk space
-            sudo docker image prune -a -f
+            # Optional: Clean up old unused images
+            sudo docker image prune -f
