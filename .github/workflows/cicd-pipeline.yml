@@ -2,8 +2,8 @@ name: Full CI/CD Pipeline
 
 on:
   push:
-    branches: [ "main" ] # Trigger on push to main
-  workflow_dispatch: # Allow manual trigger
+    branches: [ "main" ]
+  workflow_dispatch:
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}
@@ -15,6 +15,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -57,15 +59,12 @@ jobs:
           script: |
             echo ${{ secrets.GITHUB_TOKEN }} | sudo docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
 
-            # Pull using the tagged image
-            sudo docker pull ${{ steps.meta.outputs.tags }}
+            # Pull using tag passed from build job
+            sudo docker pull ${{ needs.build.outputs.image_tag }}
 
-            # Stop and remove any old container
             sudo docker stop my-app-container || true
             sudo docker rm my-app-container || true
 
-            # Run the container using the new image
-            sudo docker run -d --name my-app-container --restart always -p 3000:3000 ${{ steps.meta.outputs.tags }}
+            sudo docker run -d --name my-app-container --restart always -p 3000:3000 ${{ needs.build.outputs.image_tag }}
 
-            # Optional: Clean up old unused images
             sudo docker image prune -f
